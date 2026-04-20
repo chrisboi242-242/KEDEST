@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import axios from 'axios'; // Added missing axios import
 import { 
   FaCheckCircle, FaSyncAlt, FaMoon, 
   FaUpload, FaCalendarAlt, FaDoorOpen, FaTimes, FaArrowLeft 
 } from 'react-icons/fa';
 
-
-const response = await axios.post(`${import.meta.env.VITE_BOOKING_API_URL}`, bookingData);
+// Define the API URL correctly from your environment variables
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://kedest-engine.onrender.com";
 
 const BookNow = () => {
   const location = useLocation();
@@ -48,7 +49,6 @@ const BookNow = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // Strict Validation
     if (formData.name.trim().length < 3) {
       alert("Protocol Error: Please enter a valid legal name.");
       return;
@@ -57,7 +57,8 @@ const BookNow = () => {
     setIsSending(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/secure-booking`, {
+      // Switched to axios for consistency or kept fetch with corrected URL
+      const response = await fetch(`${import.meta.env.VITE_BOOKING_API_URL}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -80,6 +81,7 @@ const BookNow = () => {
       setBookingResult(result); 
       setShowSuccess(true);
     } catch (error) {
+      console.error("Booking Error:", error);
       setConflictMessage("Protocol Error: Connection to booking engine failed.");
       setShowConflict(true);
     } finally {
@@ -95,7 +97,7 @@ const BookNow = () => {
     reader.readAsDataURL(receiptFile);
     reader.onloadend = async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/api/secure-booking`, {
+        const response = await fetch(`${import.meta.env.VITE_BOOKING_API_URL}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
