@@ -1,0 +1,38 @@
+@import "tailwindcss";
+
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Poppins:wght@300;400;600;700&display=swap');
+
+@theme {
+  /* Hyphenated (v4 Standard) */
+  --color-hotel-navy: #001f3f;
+  --color-hotel-gold: #d4af37;
+  --color-hotel-soft-white: #f9f9f9;
+
+  /* CamelCase (Legacy/JSX Matching) */
+  --color-hotelNavy: #001f3f;
+  --color-hotelGold: #d4af37;
+  --color-hotelSoftWhite: #f9f9f9;
+  
+  --font-luxury: "Playfair Display", serif;
+  --font-sans: "Poppins", sans-serif;
+}
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+    background-color: #f9f9f9; /* hotel-soft-white fallback */
+    color: #001f3f; /* hotel-navy fallback */
+    @apply antialiased;
+  }
+  
+  h1, h2, h3 {
+    font-family: var(--font-luxury);
+    font-style: italic;
+  }
+}
+
+/* Force Selection Colors */
+::selection {
+  background-color: #d4af37 !important;
+  color: #001f3f !important;
+}
