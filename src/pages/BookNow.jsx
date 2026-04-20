@@ -6,8 +6,8 @@ import {
   FaUpload, FaCalendarAlt, FaDoorOpen, FaTimes, FaArrowLeft 
 } from 'react-icons/fa';
 
-// RIGHT: This tells the code to use the Render link when live
-const response = await axios.post(`${import.meta.env.VITE_API_BASE_URL}/api/secure-booking`, bookingData);
+
+const response = await axios.post(`${import.meta.env.VITE_BOOKING_API_URL}`, bookingData);
 
 const BookNow = () => {
   const location = useLocation();
