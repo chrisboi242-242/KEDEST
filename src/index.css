@@ -20,8 +20,8 @@
 @layer base {
   body {
     font-family: var(--font-sans);
-    background-color: #f9f9f9; /* hotel-soft-white fallback */
-    color: #001f3f; /* hotel-navy fallback */
+    background-color: var(--color-hotelSoftWhite);
+    color: var(--color-hotelNavy);
     @apply antialiased;
   }
   
@@ -29,6 +29,43 @@
     font-family: var(--font-luxury);
     font-style: italic;
   }
+}
+
+/* --- 🌟 LUXURY ANIMATION PROTOCOLS --- */
+
+@keyframes modalSlide {
+  from { 
+    transform: translateY(40px) scale(0.95); 
+    opacity: 0; 
+  }
+  to { 
+    transform: translateY(0) scale(1); 
+    opacity: 1; 
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-8px); }
+  75% { transform: translateX(8px); }
+}
+
+/* utility-ish classes for the JSX to find */
+.animate-modalSlide {
+  animation: modalSlide 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+.animate-shake {
+  animation: shake 0.2s ease-in-out 0s 2;
 }
 
 /* Force Selection Colors */
