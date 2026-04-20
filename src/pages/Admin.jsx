@@ -25,9 +25,7 @@ const Admin = () => {
   const [processingId, setProcessingId] = useState(null);
   const [notification, setNotification] = useState({ show: false, message: "", type: "" });
 
-  // Luxury Modal State
   const [confirmModal, setConfirmModal] = useState({ show: false, title: "", message: "", onConfirm: null, type: "danger" });
-
   const [isManualBooking, setIsManualBooking] = useState(false);
   const [manualData, setManualData] = useState({ roomId: '', guestName: '', nights: 1, arrivalDate: '', guestEmail: '', guestPhone: '' });
 
@@ -40,7 +38,6 @@ const Admin = () => {
     setTimeout(() => setNotification({ show: false, message: "", type: "" }), 3000);
   }, []);
 
-  // --- LUXURY MODAL TRIGGER ---
   const triggerConfirmation = (title, message, onConfirm, type = "danger") => {
     setConfirmModal({ show: true, title, message, onConfirm, type });
   };
@@ -86,27 +83,40 @@ const Admin = () => {
     }
   };
 
+  // --- 🛠️ FIXED: MANIFEST DATA HARDENING ---
   const executeManualBooking = async () => {
     const selectedRoom = rooms.find(r => r.docId === manualData.roomId);
+    
+    if (!selectedRoom) return showToast("Room configuration missing", "error");
+
     setProcessingId('manual-form');
     closeConfirm();
+    
     try {
-      await axios.post(BOOKING_API_URL, {
+      // Strictly enforce types to prevent 409 Conflict
+      const payload = {
         action: "confirm_payment",
-        roomId: manualData.roomId,
-        name: manualData.guestName,
-        email: manualData.guestEmail || "walkin@kedest.com",
-        phone: manualData.guestPhone,
-        nights: manualData.nights,
+        roomId: String(manualData.roomId),
+        name: String(manualData.guestName).trim(),
+        email: String(manualData.guestEmail || "walkin@kedest.com").trim(),
+        phone: String(manualData.guestPhone || "000").trim(),
+        nights: Number(manualData.nights),
         arrivalDate: manualData.arrivalDate,
         receiptBase64: "WALK_IN_GUEST", 
-        roomPrice: selectedRoom.price
-      });
+        roomPrice: Number(selectedRoom.price)
+      };
+
+      await axios.post(BOOKING_API_URL, payload);
+      
       showToast("Suite Reserved Successfully");
       setIsManualBooking(false);
       setManualData({ roomId: '', guestName: '', nights: 1, arrivalDate: '', guestEmail: '', guestPhone: '' });
     } catch (err) {
-      showToast(err.response?.data?.message || "Booking Failed", "error");
+      console.error("409 Conflict/Booking Error:", err.response?.data);
+      const msg = err.response?.status === 409 
+        ? "DATE CONFLICT: Room is already occupied for these dates." 
+        : (err.response?.data?.message || "Booking Failed");
+      showToast(msg, "error");
     } finally {
       setProcessingId(null);
     }
@@ -143,12 +153,13 @@ const Admin = () => {
     doc.setFontSize(20);
     doc.text("KEDEST HOTEL REVENUE REPORT", 14, 20);
     const tableData = [];
-    rooms.forEach(room => (room.bookings || []).forEach(b => tableData.push([room.name, b.guestName, b.checkIn.split('T')[0], `N${Number(b.totalAmount).toLocaleString()}`])));
+    rooms.forEach(room => (room.bookings || []).forEach(b => tableData.push([room.name, b.guestName, b.checkIn?.split('T')[0] || 'N/A', `N${Number(b.totalAmount || 0).toLocaleString()}`])));
     autoTable(doc, { head: [['Room', 'Guest', 'Date', 'Amount']], body: tableData, startY: 30, theme: 'grid' });
     doc.save(`Kedest-Audit-${new Date().toLocaleDateString()}.pdf`);
     showToast("Audit Exported");
   };
 
+  // Views and Layout
   if (showSuccess) return (
     <div className="h-screen bg-hotelNavy flex flex-col items-center justify-center p-6 text-white font-sans animate-fadeIn">
       <FaCheckCircle className="text-hotelGold text-7xl mb-8 animate-bounce" />
@@ -179,7 +190,6 @@ const Admin = () => {
 
   return (
     <div className="bg-[#f4f4f4] min-h-screen p-4 md:p-12 pb-32 font-sans text-hotelNavy">
-      {/* --- 🛡️ LUXURY CONFIRMATION MODAL --- */}
       {confirmModal.show && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-md animate-fadeIn" onClick={closeConfirm}></div>
@@ -220,7 +230,6 @@ const Admin = () => {
           </div>
         </header>
 
-        {/* Walk-in Form */}
         <div className="mb-10">
             <button onClick={() => setIsManualBooking(!isManualBooking)} className="w-full bg-white border-2 border-dashed border-hotelGold p-4 text-hotelGold font-bold uppercase tracking-widest hover:bg-hotelGold hover:text-white transition-all flex items-center justify-center gap-3">
                 {isManualBooking ? <><FaTimes /> Close Registry</> : <><FaPlus /> Register Walk-in Guest</>}
@@ -251,7 +260,7 @@ const Admin = () => {
                     </div>
                     <div className="flex flex-col gap-1">
                         <label className="text-[10px] font-bold uppercase text-gray-400 tracking-wider">Duration (Nights)</label>
-                        <input type="number" min="1" className="border p-3 outline-none text-sm bg-gray-50 focus:border-hotelGold" required value={manualData.nights} onChange={e => setManualData({...manualData, nights: e.target.value})} />
+                        <input type="number" min="1" className="border p-3 outline-none text-sm bg-gray-50 focus:border-hotelGold" required value={manualData.nights} onChange={e => setManualData({...manualData, nights: parseInt(e.target.value) || 1})} />
                     </div>
                     <div className="flex flex-col gap-1">
                         <label className="text-[10px] font-bold uppercase text-gray-400 tracking-wider">Guest Phone</label>
@@ -262,7 +271,6 @@ const Admin = () => {
             )}
         </div>
 
-        {/* Room List */}
         {loading ? (
           <div className="flex justify-center py-20"><FaSyncAlt className="animate-spin text-hotelGold text-4xl" /></div>
         ) : (
@@ -328,7 +336,6 @@ const Admin = () => {
         )}
       </div>
 
-      {/* Toasts */}
       <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] transition-all duration-500 ${notification.show ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"}`}>
         <div className={`px-8 py-4 rounded shadow-2xl flex items-center gap-4 border ${notification.type === "success" ? "bg-hotelNavy text-white border-hotelGold" : "bg-red-600 text-white border-red-400"}`}>
           {notification.type === "success" ? <FaCheckCircle className="text-hotelGold" /> : <FaExclamationTriangle />}
