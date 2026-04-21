@@ -9,8 +9,8 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 // --- CONFIGURATION ---
+// Ensure VITE_API_BASE_URL is just the domain (e.g., https://kedest-engine.onrender.com)
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
-const BOOKING_API_URL = import.meta.env.VITE_BOOKING_API_URL;
 const ADMIN_KEY = import.meta.env.VITE_ADMIN_SECRET || 'Kedest_Owner_Secret_2026'; 
 
 const Admin = () => {
@@ -46,14 +46,12 @@ const Admin = () => {
 
   const closeConfirm = () => setConfirmModal({ ...confirmModal, show: false });
 
-  // 1. UPDATED LOGOUT: Resets loading state immediately
   const handleLogout = useCallback(async () => {
     setIsLoggingIn(false);
     await signOut(auth);
     showToast("Session Terminated", "error");
   }, [showToast]);
 
-  // 2. UPDATED EFFECT: Resets loading state on any auth change (login/logout)
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser || null);
@@ -108,16 +106,19 @@ const Admin = () => {
     } catch (err) { showToast("Reset Failed", "error"); }
   };
 
+  // --- API PROTOCOLS ---
+
   const executeMasterKeyOverwrite = async () => {
     if (newMasterKey.length < 6) return showToast("Key too short (min 6)", "error");
     setProcessingId('overwriting-key');
     closeConfirm();
     try {
+      // Corrected Route Path
       await axios.post(`${API_BASE_URL}/api/admin/force-password-update`, 
         { uid: user.uid, newPassword: newMasterKey }, 
         { headers: { 'x-admin-key': ADMIN_KEY } }
       );
-      showToast("Master Key Updated Successfully");
+      showToast("Master Key Updated");
       setNewMasterKey("");
     } catch (err) {
       showToast(err.response?.data?.message || "Protocol Rejected", "error");
@@ -141,8 +142,9 @@ const Admin = () => {
         receiptBase64: "WALK_IN_GUEST", 
         roomPrice: Number(selectedRoom.price)
       };
-      await axios.post(BOOKING_API_URL, payload);
-      showToast("Suite Reserved Successfully");
+      // Uses the same booking route but with the WALK_IN flag
+      await axios.post(`${API_BASE_URL}/api/secure-booking`, payload);
+      showToast("Suite Reserved");
       setIsManualBooking(false);
       setManualData({ roomId: '', guestName: '', nights: 1, arrivalDate: '', guestEmail: '', guestPhone: '' });
     } catch (err) {
@@ -159,7 +161,7 @@ const Admin = () => {
         { headers: { 'x-admin-key': ADMIN_KEY } }
       );
       showToast("Guest Checked Out");
-    } catch (err) { showToast("Rejection", "error"); } finally { setProcessingId(null); }
+    } catch (err) { showToast("Termination Rejected", "error"); } finally { setProcessingId(null); }
   };
 
   const updatePrice = async (id, inputValue) => {
@@ -167,8 +169,11 @@ const Admin = () => {
     if (isNaN(newPrice) || newPrice <= 0) return showToast("Invalid Price", "error");
     setProcessingId(id);
     try {
-      await axios.post(`${API_BASE_URL}/api/admin/update-price`, { roomId: id, newPrice }, { headers: { 'x-admin-key': ADMIN_KEY } });
-      showToast("Rate Updated");
+      await axios.post(`${API_BASE_URL}/api/admin/update-price`, 
+        { roomId: id, newPrice }, 
+        { headers: { 'x-admin-key': ADMIN_KEY } }
+      );
+      showToast("Rate Synced");
     } catch (err) { showToast("Sync Error", "error"); } finally { setProcessingId(null); }
   };
 
@@ -176,11 +181,20 @@ const Admin = () => {
     const doc = new jsPDF();
     doc.text("KEDEST HOTEL REVENUE REPORT", 14, 20);
     const tableData = [];
-    rooms.forEach(room => (room.bookings || []).forEach(b => tableData.push([room.name, b.guestName, b.checkIn?.split('T')[0] || 'N/A', `N${Number(b.totalAmount || 0).toLocaleString()}`])));
+    rooms.forEach(room => (room.bookings || []).forEach(b => {
+      tableData.push([
+        room.name, 
+        b.guestName, 
+        b.checkIn?.split('T')[0] || 'N/A', 
+        `N${Number(b.totalAmount || 0).toLocaleString()}`
+      ]);
+    }));
     autoTable(doc, { head: [['Room', 'Guest', 'Date', 'Amount']], body: tableData, startY: 30, theme: 'grid' });
     doc.save(`Kedest-Audit-${new Date().toLocaleDateString()}.pdf`);
     showToast("Audit Exported");
   };
+
+  // --- UI RENDERING ---
 
   if (showSuccess) return (
     <div className="h-screen bg-hotelNavy flex flex-col items-center justify-center p-6 text-white font-sans animate-fadeIn">
@@ -206,7 +220,6 @@ const Admin = () => {
         <div className="mt-4 text-right">
             <button type="button" onClick={handleForgotPassword} className="text-[10px] uppercase tracking-widest text-gray-400 hover:text-hotelGold transition-colors">Reset Access?</button>
         </div>
-        {/* 3. UPDATED BUTTON: Dynamic cursor and loading state */}
         <button 
           type="submit" 
           disabled={isLocked || isLoggingIn} 
@@ -221,6 +234,7 @@ const Admin = () => {
 
   return (
     <div className="bg-[#f4f4f4] min-h-screen p-4 md:p-12 pb-32 font-sans text-hotelNavy">
+      {/* MODAL & OVERLAYS */}
       {confirmModal.show && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={closeConfirm}></div>
@@ -256,6 +270,7 @@ const Admin = () => {
           </div>
         </header>
 
+        {/* SECURITY OVERRIDE SECTION */}
         <div className="mb-10 bg-white p-6 shadow-sm border-l-4 border-red-600 animate-fadeIn">
             <div className="flex items-center gap-2 mb-4">
                 <FaKey className="text-red-600 text-xs" />
@@ -279,6 +294,7 @@ const Admin = () => {
             </div>
         </div>
 
+        {/* MANUAL BOOKING REGISTRY */}
         <div className="mb-10">
             <button onClick={() => setIsManualBooking(!isManualBooking)} className="w-full bg-white border-2 border-dashed border-hotelGold p-4 text-hotelGold font-bold uppercase tracking-widest hover:bg-hotelGold hover:text-white transition-all flex items-center justify-center gap-3">
                 {isManualBooking ? <><FaTimes /> Close Registry</> : <><FaPlus /> Register Walk-in Guest</>}
@@ -314,6 +330,7 @@ const Admin = () => {
             )}
         </div>
 
+        {/* ROOMS INVENTORY */}
         {loading ? (
           <div className="flex justify-center py-20"><FaSyncAlt className="animate-spin text-hotelGold text-4xl" /></div>
         ) : (
@@ -366,6 +383,7 @@ const Admin = () => {
         )}
       </div>
 
+      {/* TOAST NOTIFICATIONS */}
       <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] transition-all duration-500 ${notification.show ? "opacity-100" : "opacity-0"}`}>
         <div className={`px-8 py-4 rounded shadow-2xl flex items-center gap-4 border ${notification.type === "success" ? "bg-hotelNavy text-white border-hotelGold" : "bg-red-600 text-white border-red-400"}`}>
           {notification.type === "success" ? <FaCheckCircle className="text-hotelGold" /> : <FaExclamationTriangle />}
