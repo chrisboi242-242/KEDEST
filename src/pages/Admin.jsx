@@ -3,7 +3,7 @@ import { db, auth } from '../firebase';
 import { useNavigate } from 'react-router-dom'; 
 import { collection, onSnapshot } from "firebase/firestore";
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail } from "firebase/auth"; 
-import { FaSyncAlt, FaMoneyBillWave, FaLock, FaPowerOff, FaUserCircle, FaCheckCircle, FaExclamationTriangle, FaFileDownload, FaEye, FaEyeSlash, FaWhatsapp, FaTrash, FaPlus, FaTimes, FaShieldAlt } from 'react-icons/fa';
+import { FaSyncAlt, FaMoneyBillWave, FaLock, FaPowerOff, FaUserCircle, FaCheckCircle, FaExclamationTriangle, FaFileDownload, FaEye, FaEyeSlash, FaWhatsapp, FaTrash, FaPlus, FaTimes, FaShieldAlt, FaKey } from 'react-icons/fa';
 import axios from 'axios';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -19,6 +19,7 @@ const Admin = () => {
   const [user, setUser] = useState(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [newMasterKey, setNewMasterKey] = useState(""); // NEW
   const [showPass, setShowPass] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false); 
@@ -42,7 +43,6 @@ const Admin = () => {
 
   const closeConfirm = () => setConfirmModal({ ...confirmModal, show: false });
 
-  // FIXED: Resetting all states to prevent stuck spinners/success screens
   const handleLogout = useCallback(async () => {
     try {
       await signOut(auth);
@@ -71,7 +71,6 @@ const Admin = () => {
       setLoading(false);
     });
 
-    if (API_BASE_URL) axios.get(API_BASE_URL.replace('/api/admin', '')).catch(() => {});
     return () => { unsubscribeAuth(); unsubscribeRooms(); };
   }, []);
 
@@ -88,12 +87,10 @@ const Admin = () => {
     e.preventDefault();
     if (isLocked) return showToast("Vault Locked. Wait 30s.", "error");
     setIsLoggingIn(true); 
-    
     try {
       await signInWithEmailAndPassword(auth, email, password);
       setAttempts(0);
       setShowSuccess(true);
-      // Wait for the nice animation then let the auth listener handle the rest
       setTimeout(() => setShowSuccess(false), 2000);
     } catch (err) {
       setShake(true); 
@@ -108,21 +105,41 @@ const Admin = () => {
     }
   };
 
-  const handleForgotPassword = async () => {
-    if (!email || !email.includes('@')) {
-      return showToast("Enter your email in the field first", "error");
-    }
+  // NEW: Direct Backend Override Function
+  const executeMasterKeyOverwrite = async () => {
+    if (newMasterKey.length < 6) return showToast("Key too short (min 6)", "error");
+    setProcessingId('overwriting-key');
+    closeConfirm();
+
     try {
-      // NOTE: Ensure Firebase Auth -> Settings -> User Actions 
-      // has "Email Enumeration Protection" DISABLED if you want to see 'user-not-found' errors.
-      await sendPasswordResetEmail(auth, email);
-      showToast("Reset Link Sent! Check your mail.");
+      await axios.post(`${API_BASE_URL}/force-password-update`, {
+        uid: user.uid,
+        newPassword: newMasterKey
+      }, {
+        headers: { 'x-admin-key': ADMIN_KEY }
+      });
+
+      showToast("Master Key Protocol Updated");
+      setNewMasterKey("");
     } catch (err) {
-      console.error("Firebase Reset Error:", err.code, err.message);
-      showToast(`Reset Failed: ${err.code.replace('auth/', '')}`, "error");
+      console.error(err);
+      showToast("Backend Rejection: Check Admin Key", "error");
+    } finally {
+      setProcessingId(null);
     }
   };
 
+  const handleForgotPassword = async () => {
+    if (!email || !email.includes('@')) return showToast("Enter email first", "error");
+    try {
+      await sendPasswordResetEmail(auth, email);
+      showToast("Reset Link Sent! Check mail.");
+    } catch (err) {
+      showToast(`Failed: ${err.code.replace('auth/', '')}`, "error");
+    }
+  };
+
+  // ... [Keep executeManualBooking, executeTermination, updatePrice, generateAuditPDF as they were] ...
   const executeManualBooking = async () => {
     const selectedRoom = rooms.find(r => r.docId === manualData.roomId);
     if (!selectedRoom) return showToast("Room missing", "error");
@@ -215,7 +232,6 @@ const Admin = () => {
 
   return (
     <div className="bg-[#f4f4f4] min-h-screen p-4 md:p-12 pb-32 font-sans text-hotelNavy">
-      {/* Modals and UI remain consistent */}
       {confirmModal.show && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={closeConfirm}></div>
@@ -251,6 +267,7 @@ const Admin = () => {
           </div>
         </header>
 
+        {/* Manual Booking Section */}
         <div className="mb-10">
             <button onClick={() => setIsManualBooking(!isManualBooking)} className="w-full bg-white border-2 border-dashed border-hotelGold p-4 text-hotelGold font-bold uppercase tracking-widest hover:bg-hotelGold hover:text-white transition-all flex items-center justify-center gap-3">
                 {isManualBooking ? <><FaTimes /> Close Registry</> : <><FaPlus /> Register Walk-in Guest</>}
@@ -286,6 +303,7 @@ const Admin = () => {
             )}
         </div>
 
+        {/* Room Management */}
         {loading ? (
           <div className="flex justify-center py-20"><FaSyncAlt className="animate-spin text-hotelGold text-4xl" /></div>
         ) : (
@@ -336,8 +354,41 @@ const Admin = () => {
             })}
           </div>
         )}
+
+        {/* NEW: SECURITY SETTINGS SECTION */}
+        <section className="mt-20 border-t-2 border-gray-200 pt-10">
+           <div className="flex items-center gap-3 mb-6">
+              <FaShieldAlt className="text-hotelGold text-xl" />
+              <h2 className="font-luxury text-2xl italic">Vault Security</h2>
+           </div>
+           
+           <div className="bg-white p-8 border border-gray-200 shadow-sm flex flex-col md:flex-row items-end gap-6 relative">
+             {processingId === 'overwriting-key' && <div className="absolute inset-0 bg-white/60 flex items-center justify-center z-10"><FaSyncAlt className="animate-spin text-hotelGold text-2xl" /></div>}
+             <div className="flex-1 space-y-2">
+                <label className="text-[10px] font-bold uppercase text-gray-400 tracking-widest">Update Master Key (Backend Overwrite)</label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300"><FaKey /></span>
+                  <input 
+                    type="text" 
+                    placeholder="Enter New Admin Password..." 
+                    className="w-full border-2 border-gray-100 p-4 pl-12 outline-none focus:border-hotelGold transition-all text-sm font-bold"
+                    value={newMasterKey}
+                    onChange={(e) => setNewMasterKey(e.target.value)}
+                  />
+                </div>
+             </div>
+             <button 
+               onClick={() => triggerConfirmation("Overwrite Master Key", "This will bypass all email verification and force a new login key. Continue?", executeMasterKeyOverwrite, "danger")}
+               className="bg-hotelNavy text-hotelGold px-8 py-5 font-bold uppercase tracking-widest text-[10px] hover:bg-black transition-all flex items-center gap-2"
+             >
+               Force Update
+             </button>
+           </div>
+           <p className="mt-4 text-[9px] text-gray-400 uppercase tracking-widest">Note: This action is absolute and ignores Firebase security cooling periods.</p>
+        </section>
       </div>
 
+      {/* Notifications */}
       <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] transition-all duration-500 ${notification.show ? "opacity-100" : "opacity-0"}`}>
         <div className={`px-8 py-4 rounded shadow-2xl flex items-center gap-4 border ${notification.type === "success" ? "bg-hotelNavy text-white border-hotelGold" : "bg-red-600 text-white border-red-400"}`}>
           {notification.type === "success" ? <FaCheckCircle className="text-hotelGold" /> : <FaExclamationTriangle />}
