@@ -8,9 +8,11 @@ import axios from 'axios';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+// --- CONFIGURATION ---
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL; 
 const BOOKING_API_URL = import.meta.env.VITE_BOOKING_API_URL;
-const ADMIN_KEY = import.meta.env.VITE_ADMIN_SECRET || 'Kedest_Owner_Secret_2026'; 
+// FIXED: This must match the backend's process.env.ADMIN_SECRET_KEY
+const ADMIN_KEY = import.meta.env.VITE_ADMIN_SECRET_KEY || 'Kedest_Owner_Secret_2026'; 
 
 const Admin = () => {
   const navigate = useNavigate(); 
@@ -43,27 +45,10 @@ const Admin = () => {
 
   const closeConfirm = () => setConfirmModal({ ...confirmModal, show: false });
 
-  const handleLogout = useCallback(async () => {
-    try {
-      await signOut(auth);
-      setUser(null);
-      setIsLoggingIn(false);
-      setShowSuccess(false);
-      setEmail("");
-      setPassword("");
-      showToast("Session Terminated", "error");
-    } catch (err) {
-      showToast("Logout Error", "error");
-    }
-  }, [showToast]);
-
+  // --- AUTH LOGIC ---
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser || null);
-      if (!currentUser) {
-        setIsLoggingIn(false);
-        setShowSuccess(false);
-      }
     });
 
     const unsubscribeRooms = onSnapshot(collection(db, "rooms"), (snapshot) => {
@@ -73,15 +58,6 @@ const Admin = () => {
 
     return () => { unsubscribeAuth(); unsubscribeRooms(); };
   }, []);
-
-  const totalRevenue = rooms.reduce((acc, room) => {
-    const startOfToday = new Date().setHours(0, 0, 0, 0);
-    const shiftTotal = (room.bookings || []).reduce((sum, b) => {
-      const ts = new Date(b.bookedAt || b.checkIn).getTime();
-      return ts >= startOfToday ? sum + (Number(b.totalAmount) || 0) : sum;
-    }, 0);
-    return acc + shiftTotal;
-  }, 0);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -94,7 +70,7 @@ const Admin = () => {
       setTimeout(() => setShowSuccess(false), 2000);
     } catch (err) {
       setShake(true); 
-      setAttempts(attempts + 1);
+      setAttempts(prev => prev + 1);
       setIsLoggingIn(false);
       if (attempts >= 4) { 
         setIsLocked(true); 
@@ -105,45 +81,34 @@ const Admin = () => {
     }
   };
 
-  const executeMasterKeyOverwrite = async () => {
-    if (newMasterKey.length < 6) return showToast("Key too short (min 6)", "error");
-    setProcessingId('overwriting-key');
-    closeConfirm();
-
-    try {
-      await axios.post(`${API_BASE_URL}/force-password-update`, {
-        uid: user.uid,
-        newPassword: newMasterKey
-      }, {
-        headers: { 'x-admin-key': ADMIN_KEY }
-      });
-
-      showToast("Master Key Protocol Updated");
-      setNewMasterKey("");
-    } catch (err) {
-      showToast("Backend Rejection: Check Admin Key", "error");
-    } finally {
-      setProcessingId(null);
-    }
+  const handleLogout = async () => {
+    await signOut(auth);
+    showToast("Session Terminated", "error");
   };
+
+  // --- BACKEND PROTOCOLS ---
 
   const executeManualBooking = async () => {
     const selectedRoom = rooms.find(r => r.docId === manualData.roomId);
     if (!selectedRoom) return showToast("Room missing", "error");
+    
     setProcessingId('manual-form');
     closeConfirm();
+    
     try {
+      // MATCHED TO BACKEND ACTION SYSTEM
       const payload = {
         action: "confirm_payment",
         roomId: String(manualData.roomId),
-        name: String(manualData.guestName).trim(),
-        email: String(manualData.guestEmail || "walkin@kedest.com").trim(),
-        phone: String(manualData.guestPhone || "000").trim(),
+        name: manualData.guestName,
+        email: manualData.guestEmail || "walkin@kedest.com",
+        phone: manualData.guestPhone || "000",
         nights: Number(manualData.nights),
         arrivalDate: manualData.arrivalDate,
         receiptBase64: "WALK_IN_GUEST", 
         roomPrice: Number(selectedRoom.price)
       };
+      
       await axios.post(BOOKING_API_URL, payload);
       showToast("Suite Reserved Successfully");
       setIsManualBooking(false);
@@ -157,6 +122,7 @@ const Admin = () => {
     setProcessingId(roomDocId);
     closeConfirm();
     try {
+      // FIXED ROUTE: /terminate-booking
       await axios.post(`${API_BASE_URL}/terminate-booking`, 
         { roomId: roomDocId, bookingId },
         { headers: { 'x-admin-key': ADMIN_KEY } }
@@ -170,10 +136,41 @@ const Admin = () => {
     if (isNaN(newPrice) || newPrice <= 0) return showToast("Invalid Price", "error");
     setProcessingId(id);
     try {
-      await axios.post(`${API_BASE_URL}/update-price`, { roomId: id, newPrice }, { headers: { 'x-admin-key': ADMIN_KEY } });
+      // FIXED ROUTE: /update-price
+      await axios.post(`${API_BASE_URL}/update-price`, 
+        { roomId: id, newPrice }, 
+        { headers: { 'x-admin-key': ADMIN_KEY } }
+      );
       showToast("Rate Updated");
     } catch (err) { showToast("Update Failed", "error"); } finally { setProcessingId(null); }
   };
+
+  const executeMasterKeyOverwrite = async () => {
+    if (newMasterKey.length < 6) return showToast("Key too short (min 6)", "error");
+    setProcessingId('overwriting-key');
+    closeConfirm();
+
+    try {
+      await axios.post(`${API_BASE_URL}/force-password-update`, 
+        { uid: user.uid, newPassword: newMasterKey }, 
+        { headers: { 'x-admin-key': ADMIN_KEY } }
+      );
+      showToast("Master Key Protocol Updated");
+      setNewMasterKey("");
+    } catch (err) {
+      showToast("Backend Rejection", "error");
+    } finally { setProcessingId(null); }
+  };
+
+  // --- UI CALCULATIONS ---
+  const totalRevenue = rooms.reduce((acc, room) => {
+    const startOfToday = new Date().setHours(0, 0, 0, 0);
+    const shiftTotal = (room.bookings || []).reduce((sum, b) => {
+      const ts = new Date(b.bookedAt || b.checkIn).getTime();
+      return ts >= startOfToday ? sum + (Number(b.totalAmount) || 0) : sum;
+    }, 0);
+    return acc + shiftTotal;
+  }, 0);
 
   const generateAuditPDF = () => {
     const doc = new jsPDF();
@@ -348,14 +345,14 @@ const Admin = () => {
               <div className="flex-1 space-y-2">
                  <label className="text-[10px] font-bold uppercase text-gray-400 tracking-widest">Update Master Key (Backend Overwrite)</label>
                  <div className="relative">
-                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300"><FaKey /></span>
-                   <input 
-                     type="text" 
-                     placeholder="Enter New Admin Password..." 
-                     className="w-full border-2 border-gray-100 p-4 pl-12 outline-none focus:border-hotelGold transition-all text-sm font-bold"
-                     value={newMasterKey}
-                     onChange={(e) => setNewMasterKey(e.target.value)}
-                   />
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300"><FaKey /></span>
+                    <input 
+                      type="text" 
+                      placeholder="Enter New Admin Password..." 
+                      className="w-full border-2 border-gray-100 p-4 pl-12 outline-none focus:border-hotelGold transition-all text-sm font-bold"
+                      value={newMasterKey}
+                      onChange={(e) => setNewMasterKey(e.target.value)}
+                    />
                  </div>
               </div>
               <button 
@@ -365,11 +362,11 @@ const Admin = () => {
                 Force Update
               </button>
             </div>
-            <p className="mt-4 text-[9px] text-gray-400 uppercase tracking-widest">Note: This action is absolute and ignores Firebase security cooling periods.</p>
         </section>
       </div>
 
-      <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] transition-all duration-500 ${notification.show ? "opacity-100" : "opacity-0"}`}>
+      {/* Toast Notification */}
+      <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] transition-all duration-500 ${notification.show ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"}`}>
         <div className={`px-8 py-4 rounded shadow-2xl flex items-center gap-4 border ${notification.type === "success" ? "bg-hotelNavy text-white border-hotelGold" : "bg-red-600 text-white border-red-400"}`}>
           {notification.type === "success" ? <FaCheckCircle className="text-hotelGold" /> : <FaExclamationTriangle />}
           <span className="text-[10px] uppercase font-bold tracking-widest">{notification.message}</span>
