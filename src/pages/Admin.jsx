@@ -8,7 +8,6 @@ import axios from 'axios';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-// --- CONFIGURATION ---
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const BOOKING_API_URL = import.meta.env.VITE_BOOKING_API_URL;
 const ADMIN_KEY = import.meta.env.VITE_ADMIN_SECRET || 'Kedest_Owner_Secret_2026'; 
@@ -25,11 +24,9 @@ const Admin = () => {
   const [isLoggingIn, setIsLoggingIn] = useState(false); 
   const [processingId, setProcessingId] = useState(null);
   const [notification, setNotification] = useState({ show: false, message: "", type: "" });
-
   const [confirmModal, setConfirmModal] = useState({ show: false, title: "", message: "", onConfirm: null, type: "danger" });
   const [isManualBooking, setIsManualBooking] = useState(false);
   const [manualData, setManualData] = useState({ roomId: '', guestName: '', nights: 1, arrivalDate: '', guestEmail: '', guestPhone: '' });
-
   const [shake, setShake] = useState(false);
   const [attempts, setAttempts] = useState(0);
   const [isLocked, setIsLocked] = useState(false);
@@ -45,20 +42,36 @@ const Admin = () => {
 
   const closeConfirm = () => setConfirmModal({ ...confirmModal, show: false });
 
+  // FIXED: Resetting all states to prevent stuck spinners/success screens
   const handleLogout = useCallback(async () => {
-    await signOut(auth);
-    showToast("Session Terminated", "error");
+    try {
+      await signOut(auth);
+      setUser(null);
+      setIsLoggingIn(false);
+      setShowSuccess(false);
+      setEmail("");
+      setPassword("");
+      showToast("Session Terminated", "error");
+    } catch (err) {
+      showToast("Logout Error", "error");
+    }
   }, [showToast]);
 
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => setUser(currentUser || null));
+    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser || null);
+      if (!currentUser) {
+        setIsLoggingIn(false);
+        setShowSuccess(false);
+      }
+    });
+
     const unsubscribeRooms = onSnapshot(collection(db, "rooms"), (snapshot) => {
       setRooms(snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() })));
       setLoading(false);
     });
 
     if (API_BASE_URL) axios.get(API_BASE_URL.replace('/api/admin', '')).catch(() => {});
-
     return () => { unsubscribeAuth(); unsubscribeRooms(); };
   }, []);
 
@@ -74,13 +87,13 @@ const Admin = () => {
   const handleLogin = async (e) => {
     e.preventDefault();
     if (isLocked) return showToast("Vault Locked. Wait 30s.", "error");
-    
     setIsLoggingIn(true); 
     
     try {
       await signInWithEmailAndPassword(auth, email, password);
       setAttempts(0);
       setShowSuccess(true);
+      // Wait for the nice animation then let the auth listener handle the rest
       setTimeout(() => setShowSuccess(false), 2000);
     } catch (err) {
       setShake(true); 
@@ -97,27 +110,24 @@ const Admin = () => {
 
   const handleForgotPassword = async () => {
     if (!email || !email.includes('@')) {
-      return showToast("Enter valid Admin Email above first", "error");
+      return showToast("Enter your email in the field first", "error");
     }
     try {
+      // NOTE: Ensure Firebase Auth -> Settings -> User Actions 
+      // has "Email Enumeration Protection" DISABLED if you want to see 'user-not-found' errors.
       await sendPasswordResetEmail(auth, email);
-      showToast("Reset Link Sent! Check your Inbox/Spam");
+      showToast("Reset Link Sent! Check your mail.");
     } catch (err) {
-      console.error("Reset Error:", err.code);
-      let errorMsg = "Reset Failed";
-      if (err.code === 'auth/user-not-found') errorMsg = "Admin account not found";
-      if (err.code === 'auth/too-many-requests') errorMsg = "Too many attempts. Wait.";
-      showToast(errorMsg, "error");
+      console.error("Firebase Reset Error:", err.code, err.message);
+      showToast(`Reset Failed: ${err.code.replace('auth/', '')}`, "error");
     }
   };
 
   const executeManualBooking = async () => {
     const selectedRoom = rooms.find(r => r.docId === manualData.roomId);
     if (!selectedRoom) return showToast("Room missing", "error");
-
     setProcessingId('manual-form');
     closeConfirm();
-    
     try {
       const payload = {
         action: "confirm_payment",
@@ -130,17 +140,13 @@ const Admin = () => {
         receiptBase64: "WALK_IN_GUEST", 
         roomPrice: Number(selectedRoom.price)
       };
-
       await axios.post(BOOKING_API_URL, payload);
       showToast("Suite Reserved Successfully");
       setIsManualBooking(false);
       setManualData({ roomId: '', guestName: '', nights: 1, arrivalDate: '', guestEmail: '', guestPhone: '' });
     } catch (err) {
-      const msg = err.response?.status === 409 ? "DATE CONFLICT" : "Booking Failed";
-      showToast(msg, "error");
-    } finally {
-      setProcessingId(null);
-    }
+      showToast(err.response?.status === 409 ? "DATE CONFLICT" : "Booking Failed", "error");
+    } finally { setProcessingId(null); }
   };
 
   const executeTermination = async (roomDocId, bookingId) => {
@@ -152,11 +158,7 @@ const Admin = () => {
         { headers: { 'x-admin-key': ADMIN_KEY } }
       );
       showToast("Guest Checked Out");
-    } catch (err) {
-      showToast("Rejection", "error");
-    } finally {
-      setProcessingId(null);
-    }
+    } catch (err) { showToast("Termination Failed", "error"); } finally { setProcessingId(null); }
   };
 
   const updatePrice = async (id, inputValue) => {
@@ -166,11 +168,12 @@ const Admin = () => {
     try {
       await axios.post(`${API_BASE_URL}/update-price`, { roomId: id, newPrice }, { headers: { 'x-admin-key': ADMIN_KEY } });
       showToast("Rate Updated");
-    } catch (err) { showToast("Error", "error"); } finally { setProcessingId(null); }
+    } catch (err) { showToast("Update Failed", "error"); } finally { setProcessingId(null); }
   };
 
   const generateAuditPDF = () => {
     const doc = new jsPDF();
+    doc.setFontSize(18);
     doc.text("KEDEST HOTEL REVENUE REPORT", 14, 20);
     const tableData = [];
     rooms.forEach(room => (room.bookings || []).forEach(b => tableData.push([room.name, b.guestName, b.checkIn?.split('T')[0] || 'N/A', `N${Number(b.totalAmount || 0).toLocaleString()}`])));
@@ -200,11 +203,9 @@ const Admin = () => {
               <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-3.5 text-gray-400">{showPass ? <FaEyeSlash /> : <FaEye />}</button>
           </div>
         </div>
-
         <div className="mt-4 text-right">
             <button type="button" onClick={handleForgotPassword} className="text-[10px] uppercase tracking-widest text-gray-400 hover:text-hotelGold transition-colors">Reset Access?</button>
         </div>
-
         <button type="submit" disabled={isLocked || isLoggingIn} className="w-full mt-6 py-4 bg-hotelNavy text-hotelGold font-bold uppercase tracking-widest text-xs hover:bg-black transition-all flex items-center justify-center gap-2">
           {isLocked ? "Vault Locked" : isLoggingIn ? <><FaSyncAlt className="animate-spin" /> Establishing Link...</> : "Authorize Entry"}
         </button>
@@ -214,6 +215,7 @@ const Admin = () => {
 
   return (
     <div className="bg-[#f4f4f4] min-h-screen p-4 md:p-12 pb-32 font-sans text-hotelNavy">
+      {/* Modals and UI remain consistent */}
       {confirmModal.show && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={closeConfirm}></div>
@@ -291,7 +293,6 @@ const Admin = () => {
             {rooms.map((room) => {
               const now = new Date();
               const activeBookings = (room.bookings || []).filter(b => new Date(b.checkOut) > now);
-
               return (
                 <div key={room.docId} className="bg-white p-6 shadow-sm border-l-4 border-hotelGold relative group">
                   {processingId === room.docId && <div className="absolute inset-0 bg-white/80 z-20 flex items-center justify-center"><FaSyncAlt className="animate-spin text-hotelGold text-2xl" /></div>}
@@ -308,7 +309,6 @@ const Admin = () => {
                           </div>
                       </div>
                   </div>
-
                   <div className="space-y-3">
                     <h4 className="text-[10px] uppercase font-black text-gray-300 tracking-[0.2em]">Current Residents</h4>
                     {activeBookings.length > 0 ? (
