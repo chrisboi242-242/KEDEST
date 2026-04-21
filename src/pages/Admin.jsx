@@ -11,7 +11,6 @@ import autoTable from 'jspdf-autotable';
 // --- CONFIGURATION ---
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL; 
 const BOOKING_API_URL = import.meta.env.VITE_BOOKING_API_URL;
-// FIXED: This must match the backend's process.env.ADMIN_SECRET_KEY
 const ADMIN_KEY = import.meta.env.VITE_ADMIN_SECRET_KEY || 'Kedest_Owner_Secret_2026'; 
 
 const Admin = () => {
@@ -96,7 +95,6 @@ const Admin = () => {
     closeConfirm();
     
     try {
-      // MATCHED TO BACKEND ACTION SYSTEM
       const payload = {
         action: "confirm_payment",
         roomId: String(manualData.roomId),
@@ -122,8 +120,8 @@ const Admin = () => {
     setProcessingId(roomDocId);
     closeConfirm();
     try {
-      // FIXED ROUTE: /terminate-booking
-      await axios.post(`${API_BASE_URL}/terminate-booking`, 
+      // UPDATED ROUTE: Added /api/admin prefix
+      await axios.post(`${API_BASE_URL}/api/admin/terminate-booking`, 
         { roomId: roomDocId, bookingId },
         { headers: { 'x-admin-key': ADMIN_KEY } }
       );
@@ -136,8 +134,8 @@ const Admin = () => {
     if (isNaN(newPrice) || newPrice <= 0) return showToast("Invalid Price", "error");
     setProcessingId(id);
     try {
-      // FIXED ROUTE: /update-price
-      await axios.post(`${API_BASE_URL}/update-price`, 
+      // UPDATED ROUTE: Added /api/admin prefix
+      await axios.post(`${API_BASE_URL}/api/admin/update-price`, 
         { roomId: id, newPrice }, 
         { headers: { 'x-admin-key': ADMIN_KEY } }
       );
@@ -151,7 +149,8 @@ const Admin = () => {
     closeConfirm();
 
     try {
-      await axios.post(`${API_BASE_URL}/force-password-update`, 
+      // UPDATED ROUTE: Added /api/admin prefix
+      await axios.post(`${API_BASE_URL}/api/admin/force-password-update`, 
         { uid: user.uid, newPassword: newMasterKey }, 
         { headers: { 'x-admin-key': ADMIN_KEY } }
       );
@@ -183,6 +182,7 @@ const Admin = () => {
     showToast("Audit Exported");
   };
 
+  // ... [Keep the rest of your JSX rendering here exactly as you had it] ...
   if (showSuccess) return (
     <div className="h-screen bg-hotelNavy flex flex-col items-center justify-center p-6 text-white font-sans animate-fadeIn">
       <FaCheckCircle className="text-hotelGold text-7xl mb-8 animate-bounce" />
