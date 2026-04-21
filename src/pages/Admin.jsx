@@ -3,7 +3,7 @@ import { db, auth } from '../firebase';
 import { useNavigate } from 'react-router-dom'; 
 import { collection, onSnapshot } from "firebase/firestore";
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail } from "firebase/auth"; 
-import { FaSyncAlt, FaMoneyBillWave, FaLock, FaPowerOff, FaUserCircle, FaCheckCircle, FaExclamationTriangle, FaFileDownload, FaEye, FaEyeSlash, FaWhatsapp, FaTrash, FaPlus, FaTimes, FaShieldAlt, FaKey, FaLifeRing } from 'react-icons/fa';
+import { FaSyncAlt, FaMoneyBillWave, FaLock, FaPowerOff, FaUserCircle, FaCheckCircle, FaExclamationTriangle, FaFileDownload, FaEye, FaEyeSlash, FaWhatsapp, FaTrash, FaPlus, FaTimes, FaShieldAlt, FaKey } from 'react-icons/fa';
 import axios from 'axios';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -19,7 +19,7 @@ const Admin = () => {
   const [user, setUser] = useState(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [newMasterKey, setNewMasterKey] = useState("");
+  const [newMasterKey, setNewMasterKey] = useState(""); // NEW
   const [showPass, setShowPass] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false); 
@@ -32,10 +32,6 @@ const Admin = () => {
   const [attempts, setAttempts] = useState(0);
   const [isLocked, setIsLocked] = useState(false);
 
-  // --- EMERGENCY BACKDOOR STATE ---
-  const [showBackdoor, setShowBackdoor] = useState(false);
-  const [backdoorKey, setBackdoorKey] = useState("");
-
   const showToast = useCallback((msg, type = "success") => {
     setNotification({ show: true, message: msg, type });
     setTimeout(() => setNotification({ show: false, message: "", type: "" }), 4000);
@@ -47,46 +43,6 @@ const Admin = () => {
 
   const closeConfirm = () => setConfirmModal({ ...confirmModal, show: false });
 
-  // 1. EMERGENCY BACKDOOR RESET (When Locked Out)
-  const executeBackdoorReset = async () => {
-    if (!email || !password || !backdoorKey) return showToast("Missing Recovery Data", "error");
-    setIsLoggingIn(true);
-    try {
-      await axios.post(`${API_BASE_URL}/admin/backdoor-reset`, {
-        email: email,
-        newPassword: password,
-        adminKey: backdoorKey
-      });
-      showToast("Access Restored! Logging in...");
-      // Auto-attempt login with the newly set password
-      await signInWithEmailAndPassword(auth, email, password);
-    } catch (err) {
-      showToast("Backdoor Refused: Invalid Secret Key", "error");
-    } finally {
-      setIsLoggingIn(false);
-    }
-  };
-
-  // 2. INTERNAL MASTER KEY OVERWRITE (When already logged in)
-  const executeMasterKeyOverwrite = async () => {
-    if (newMasterKey.length < 6) return showToast("Key too short (min 6)", "error");
-    setProcessingId('overwriting-key');
-    closeConfirm();
-    try {
-      await axios.post(`${API_BASE_URL}/admin/force-password-update`, {
-        uid: user.uid,
-        newPassword: newMasterKey
-      }, { headers: { 'x-admin-key': ADMIN_KEY } });
-      showToast("Master Key Protocol Updated");
-      setNewMasterKey("");
-    } catch (err) {
-      showToast("Backend Rejection", "error");
-    } finally {
-      setProcessingId(null);
-    }
-  };
-
-  // 3. LOGOUT & AUTH EFFECTS
   const handleLogout = useCallback(async () => {
     try {
       await signOut(auth);
@@ -96,20 +52,36 @@ const Admin = () => {
       setEmail("");
       setPassword("");
       showToast("Session Terminated", "error");
-    } catch (err) { showToast("Logout Error", "error"); }
+    } catch (err) {
+      showToast("Logout Error", "error");
+    }
   }, [showToast]);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser || null);
-      if (!currentUser) { setIsLoggingIn(false); setShowSuccess(false); }
+      if (!currentUser) {
+        setIsLoggingIn(false);
+        setShowSuccess(false);
+      }
     });
+
     const unsubscribeRooms = onSnapshot(collection(db, "rooms"), (snapshot) => {
       setRooms(snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() })));
       setLoading(false);
     });
+
     return () => { unsubscribeAuth(); unsubscribeRooms(); };
   }, []);
+
+  const totalRevenue = rooms.reduce((acc, room) => {
+    const startOfToday = new Date().setHours(0, 0, 0, 0);
+    const shiftTotal = (room.bookings || []).reduce((sum, b) => {
+      const ts = new Date(b.bookedAt || b.checkIn).getTime();
+      return ts >= startOfToday ? sum + (Number(b.totalAmount) || 0) : sum;
+    }, 0);
+    return acc + shiftTotal;
+  }, 0);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -133,17 +105,41 @@ const Admin = () => {
     }
   };
 
-  // ... [Keep totalRevenue, executeManualBooking, executeTermination, updatePrice, generateAuditPDF as they were] ...
+  // NEW: Direct Backend Override Function
+  const executeMasterKeyOverwrite = async () => {
+    if (newMasterKey.length < 6) return showToast("Key too short (min 6)", "error");
+    setProcessingId('overwriting-key');
+    closeConfirm();
 
-  const totalRevenue = rooms.reduce((acc, room) => {
-    const startOfToday = new Date().setHours(0, 0, 0, 0);
-    const shiftTotal = (room.bookings || []).reduce((sum, b) => {
-      const ts = new Date(b.bookedAt || b.checkIn).getTime();
-      return ts >= startOfToday ? sum + (Number(b.totalAmount) || 0) : sum;
-    }, 0);
-    return acc + shiftTotal;
-  }, 0);
+    try {
+      await axios.post(`${API_BASE_URL}/force-password-update`, {
+        uid: user.uid,
+        newPassword: newMasterKey
+      }, {
+        headers: { 'x-admin-key': ADMIN_KEY }
+      });
 
+      showToast("Master Key Protocol Updated");
+      setNewMasterKey("");
+    } catch (err) {
+      console.error(err);
+      showToast("Backend Rejection: Check Admin Key", "error");
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email || !email.includes('@')) return showToast("Enter email first", "error");
+    try {
+      await sendPasswordResetEmail(auth, email);
+      showToast("Reset Link Sent! Check mail.");
+    } catch (err) {
+      showToast(`Failed: ${err.code.replace('auth/', '')}`, "error");
+    }
+  };
+
+  // ... [Keep executeManualBooking, executeTermination, updatePrice, generateAuditPDF as they were] ...
   const executeManualBooking = async () => {
     const selectedRoom = rooms.find(r => r.docId === manualData.roomId);
     if (!selectedRoom) return showToast("Room missing", "error");
@@ -211,53 +207,29 @@ const Admin = () => {
     </div>
   );
 
-  // --- LOGIN VIEW (WITH EMERGENCY BACKDOOR) ---
   if (!user) return (
     <div className="h-screen bg-hotelNavy flex items-center justify-center p-6 font-sans relative overflow-hidden">
-      <form onSubmit={handleLogin} className={`bg-white p-10 shadow-2xl border-t-8 ${showBackdoor ? 'border-red-600' : 'border-hotelGold'} max-w-sm w-full z-10 transition-all duration-300 ${shake ? 'animate-shake' : ''}`}>
+      <form onSubmit={handleLogin} className={`bg-white p-10 shadow-2xl border-t-8 border-hotelGold max-w-sm w-full z-10 transition-all duration-300 ${shake ? 'animate-shake border-red-600' : ''}`}>
         <button type="button" onClick={() => navigate('/')} className="absolute -top-12 left-0 text-white/50 hover:text-hotelGold text-[10px] uppercase tracking-[0.3em]">← Back to Hotel</button>
-        
-        {showBackdoor ? <FaLifeRing className="text-4xl mx-auto mb-4 text-red-600 animate-pulse" /> : <FaLock className={`text-4xl mx-auto mb-4 ${isLocked ? 'text-red-600' : 'text-hotelGold'}`} />}
-        
-        <h2 className="font-luxury text-2xl italic mb-8 text-center text-hotelNavy">
-          {showBackdoor ? "Emergency Recovery" : "Control Tower"}
-        </h2>
-
-        <div className="space-y-4">
+        <FaLock className={`text-4xl mx-auto mb-4 ${isLocked ? 'text-red-600' : 'text-hotelGold'}`} />
+        <h2 className="font-luxury text-2xl italic mb-8 text-center text-hotelNavy">Control Tower</h2>
+        <div className="space-y-6">
           <input type="email" placeholder="Admin Email" className="w-full border p-3 outline-none text-sm focus:border-hotelGold" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          
           <div className="relative">
-              <input type={showPass ? "text" : "password"} placeholder={showBackdoor ? "New Master Key" : "Master Key"} className="w-full border p-3 outline-none text-sm focus:border-hotelGold" value={password} onChange={(e) => setPassword(e.target.value)} required />
+              <input type={showPass ? "text" : "password"} placeholder="Master Key" className="w-full border p-3 outline-none text-sm focus:border-hotelGold" value={password} onChange={(e) => setPassword(e.target.value)} required />
               <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-3.5 text-gray-400">{showPass ? <FaEyeSlash /> : <FaEye />}</button>
           </div>
-
-          {showBackdoor && (
-            <input type="password" placeholder="System Secret Key (from .env)" className="w-full border-2 border-red-100 p-3 outline-none text-sm focus:border-red-600 bg-red-50" value={backdoorKey} onChange={(e) => setBackdoorKey(e.target.value)} required />
-          )}
         </div>
-
-        <div className="mt-4 flex justify-between items-center">
-            <button type="button" onClick={() => setShowBackdoor(!showBackdoor)} className="text-[9px] uppercase tracking-widest text-red-600 font-bold hover:underline">
-              {showBackdoor ? "Back to Login" : "Locked Out?"}
-            </button>
-            {!showBackdoor && (
-               <button type="button" onClick={() => { if(!email) return showToast("Enter email", "error"); sendPasswordResetEmail(auth, email); showToast("Reset Link Sent!"); }} className="text-[9px] uppercase tracking-widest text-gray-400 hover:text-hotelGold">Email Reset</button>
-            )}
+        <div className="mt-4 text-right">
+            <button type="button" onClick={handleForgotPassword} className="text-[10px] uppercase tracking-widest text-gray-400 hover:text-hotelGold transition-colors">Reset Access?</button>
         </div>
-
-        <button 
-          type="button" 
-          onClick={showBackdoor ? executeBackdoorReset : handleLogin}
-          disabled={isLocked || isLoggingIn} 
-          className={`w-full mt-6 py-4 font-bold uppercase tracking-widest text-xs transition-all flex items-center justify-center gap-2 ${showBackdoor ? 'bg-red-600 text-white' : 'bg-hotelNavy text-hotelGold hover:bg-black'}`}
-        >
-          {isLoggingIn ? <FaSyncAlt className="animate-spin" /> : showBackdoor ? "Force Reset Access" : "Authorize Entry"}
+        <button type="submit" disabled={isLocked || isLoggingIn} className="w-full mt-6 py-4 bg-hotelNavy text-hotelGold font-bold uppercase tracking-widest text-xs hover:bg-black transition-all flex items-center justify-center gap-2">
+          {isLocked ? "Vault Locked" : isLoggingIn ? <><FaSyncAlt className="animate-spin" /> Establishing Link...</> : "Authorize Entry"}
         </button>
       </form>
     </div>
   );
 
-  // --- MAIN ADMIN PANEL ---
   return (
     <div className="bg-[#f4f4f4] min-h-screen p-4 md:p-12 pb-32 font-sans text-hotelNavy">
       {confirmModal.show && (
@@ -295,8 +267,7 @@ const Admin = () => {
           </div>
         </header>
 
-        {/* ... [Manual Booking and Room Listing Sections remain the same] ... */}
-        
+        {/* Manual Booking Section */}
         <div className="mb-10">
             <button onClick={() => setIsManualBooking(!isManualBooking)} className="w-full bg-white border-2 border-dashed border-hotelGold p-4 text-hotelGold font-bold uppercase tracking-widest hover:bg-hotelGold hover:text-white transition-all flex items-center justify-center gap-3">
                 {isManualBooking ? <><FaTimes /> Close Registry</> : <><FaPlus /> Register Walk-in Guest</>}
@@ -332,6 +303,7 @@ const Admin = () => {
             )}
         </div>
 
+        {/* Room Management */}
         {loading ? (
           <div className="flex justify-center py-20"><FaSyncAlt className="animate-spin text-hotelGold text-4xl" /></div>
         ) : (
@@ -383,6 +355,7 @@ const Admin = () => {
           </div>
         )}
 
+        {/* NEW: SECURITY SETTINGS SECTION */}
         <section className="mt-20 border-t-2 border-gray-200 pt-10">
            <div className="flex items-center gap-3 mb-6">
               <FaShieldAlt className="text-hotelGold text-xl" />
@@ -415,6 +388,7 @@ const Admin = () => {
         </section>
       </div>
 
+      {/* Notifications */}
       <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] transition-all duration-500 ${notification.show ? "opacity-100" : "opacity-0"}`}>
         <div className={`px-8 py-4 rounded shadow-2xl flex items-center gap-4 border ${notification.type === "success" ? "bg-hotelNavy text-white border-hotelGold" : "bg-red-600 text-white border-red-400"}`}>
           {notification.type === "success" ? <FaCheckCircle className="text-hotelGold" /> : <FaExclamationTriangle />}
