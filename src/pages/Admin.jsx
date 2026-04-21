@@ -22,7 +22,7 @@ const Admin = () => {
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
-  const [isLoggingIn, setIsLoggingIn] = useState(false); // New: Login loading state
+  const [isLoggingIn, setIsLoggingIn] = useState(false); 
   const [processingId, setProcessingId] = useState(null);
   const [notification, setNotification] = useState({ show: false, message: "", type: "" });
 
@@ -36,7 +36,7 @@ const Admin = () => {
 
   const showToast = useCallback((msg, type = "success") => {
     setNotification({ show: true, message: msg, type });
-    setTimeout(() => setNotification({ show: false, message: "", type: "" }), 3000);
+    setTimeout(() => setNotification({ show: false, message: "", type: "" }), 4000);
   }, []);
 
   const triggerConfirmation = (title, message, onConfirm, type = "danger") => {
@@ -50,7 +50,6 @@ const Admin = () => {
     showToast("Session Terminated", "error");
   }, [showToast]);
 
-  // Initial setup and Backend Wake-up
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => setUser(currentUser || null));
     const unsubscribeRooms = onSnapshot(collection(db, "rooms"), (snapshot) => {
@@ -58,7 +57,6 @@ const Admin = () => {
       setLoading(false);
     });
 
-    // Pulse the backend to wake up Render (Cold Start prevention)
     if (API_BASE_URL) axios.get(API_BASE_URL.replace('/api/admin', '')).catch(() => {});
 
     return () => { unsubscribeAuth(); unsubscribeRooms(); };
@@ -77,7 +75,7 @@ const Admin = () => {
     e.preventDefault();
     if (isLocked) return showToast("Vault Locked. Wait 30s.", "error");
     
-    setIsLoggingIn(true); // Visual trigger: "Coming up"
+    setIsLoggingIn(true); 
     
     try {
       await signInWithEmailAndPassword(auth, email, password);
@@ -98,12 +96,18 @@ const Admin = () => {
   };
 
   const handleForgotPassword = async () => {
-    if (!email) return showToast("Enter Admin Email", "error");
+    if (!email || !email.includes('@')) {
+      return showToast("Enter valid Admin Email above first", "error");
+    }
     try {
       await sendPasswordResetEmail(auth, email);
-      showToast("Reset Link Sent");
+      showToast("Reset Link Sent! Check your Inbox/Spam");
     } catch (err) {
-      showToast("Reset Failed", "error");
+      console.error("Reset Error:", err.code);
+      let errorMsg = "Reset Failed";
+      if (err.code === 'auth/user-not-found') errorMsg = "Admin account not found";
+      if (err.code === 'auth/too-many-requests') errorMsg = "Too many attempts. Wait.";
+      showToast(errorMsg, "error");
     }
   };
 
@@ -198,7 +202,7 @@ const Admin = () => {
         </div>
 
         <div className="mt-4 text-right">
-            <button type="button" onClick={handleForgotPassword} className="text-[10px] uppercase tracking-widest text-gray-400 hover:text-hotelGold">Reset Access?</button>
+            <button type="button" onClick={handleForgotPassword} className="text-[10px] uppercase tracking-widest text-gray-400 hover:text-hotelGold transition-colors">Reset Access?</button>
         </div>
 
         <button type="submit" disabled={isLocked || isLoggingIn} className="w-full mt-6 py-4 bg-hotelNavy text-hotelGold font-bold uppercase tracking-widest text-xs hover:bg-black transition-all flex items-center justify-center gap-2">
