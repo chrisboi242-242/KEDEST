@@ -9,7 +9,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 // --- CONFIGURATION ---
-// Ensure VITE_API_BASE_URL is just the domain (e.g., https://kedest-engine.onrender.com)
+// VITE_API_BASE_URL MUST be "https://kedest-engine.onrender.com" (No trailing slash, no /api/admin)
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const ADMIN_KEY = import.meta.env.VITE_ADMIN_SECRET || 'Kedest_Owner_Secret_2026'; 
 
@@ -106,14 +106,13 @@ const Admin = () => {
     } catch (err) { showToast("Reset Failed", "error"); }
   };
 
-  // --- API PROTOCOLS ---
+  // --- CLEAN API PROTOCOLS ---
 
   const executeMasterKeyOverwrite = async () => {
     if (newMasterKey.length < 6) return showToast("Key too short (min 6)", "error");
     setProcessingId('overwriting-key');
     closeConfirm();
     try {
-      // Corrected Route Path
       await axios.post(`${API_BASE_URL}/api/admin/force-password-update`, 
         { uid: user.uid, newPassword: newMasterKey }, 
         { headers: { 'x-admin-key': ADMIN_KEY } }
@@ -142,7 +141,6 @@ const Admin = () => {
         receiptBase64: "WALK_IN_GUEST", 
         roomPrice: Number(selectedRoom.price)
       };
-      // Uses the same booking route but with the WALK_IN flag
       await axios.post(`${API_BASE_URL}/api/secure-booking`, payload);
       showToast("Suite Reserved");
       setIsManualBooking(false);
@@ -194,7 +192,7 @@ const Admin = () => {
     showToast("Audit Exported");
   };
 
-  // --- UI RENDERING ---
+  // --- UI RENDERING (UNTOUCHED STYLING) ---
 
   if (showSuccess) return (
     <div className="h-screen bg-hotelNavy flex flex-col items-center justify-center p-6 text-white font-sans animate-fadeIn">
@@ -224,7 +222,7 @@ const Admin = () => {
           type="submit" 
           disabled={isLocked || isLoggingIn} 
           className={`w-full mt-6 py-4 bg-hotelNavy text-hotelGold font-bold uppercase tracking-widest text-xs transition-all flex items-center justify-center gap-2 
-            ${(isLocked || isLoggingIn) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-black cursor-pointer'}`}
+            {(isLocked || isLoggingIn) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-black cursor-pointer'}`}
         >
           {isLocked ? "Vault Locked" : isLoggingIn ? <><FaSyncAlt className="animate-spin" /> Establishing Link...</> : "Authorize Entry"}
         </button>
@@ -234,7 +232,6 @@ const Admin = () => {
 
   return (
     <div className="bg-[#f4f4f4] min-h-screen p-4 md:p-12 pb-32 font-sans text-hotelNavy">
-      {/* MODAL & OVERLAYS */}
       {confirmModal.show && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={closeConfirm}></div>
@@ -270,7 +267,6 @@ const Admin = () => {
           </div>
         </header>
 
-        {/* SECURITY OVERRIDE SECTION */}
         <div className="mb-10 bg-white p-6 shadow-sm border-l-4 border-red-600 animate-fadeIn">
             <div className="flex items-center gap-2 mb-4">
                 <FaKey className="text-red-600 text-xs" />
@@ -294,7 +290,6 @@ const Admin = () => {
             </div>
         </div>
 
-        {/* MANUAL BOOKING REGISTRY */}
         <div className="mb-10">
             <button onClick={() => setIsManualBooking(!isManualBooking)} className="w-full bg-white border-2 border-dashed border-hotelGold p-4 text-hotelGold font-bold uppercase tracking-widest hover:bg-hotelGold hover:text-white transition-all flex items-center justify-center gap-3">
                 {isManualBooking ? <><FaTimes /> Close Registry</> : <><FaPlus /> Register Walk-in Guest</>}
@@ -330,7 +325,6 @@ const Admin = () => {
             )}
         </div>
 
-        {/* ROOMS INVENTORY */}
         {loading ? (
           <div className="flex justify-center py-20"><FaSyncAlt className="animate-spin text-hotelGold text-4xl" /></div>
         ) : (
@@ -383,7 +377,6 @@ const Admin = () => {
         )}
       </div>
 
-      {/* TOAST NOTIFICATIONS */}
       <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] transition-all duration-500 ${notification.show ? "opacity-100" : "opacity-0"}`}>
         <div className={`px-8 py-4 rounded shadow-2xl flex items-center gap-4 border ${notification.type === "success" ? "bg-hotelNavy text-white border-hotelGold" : "bg-red-600 text-white border-red-400"}`}>
           {notification.type === "success" ? <FaCheckCircle className="text-hotelGold" /> : <FaExclamationTriangle />}
